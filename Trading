@@ -1,0 +1,62 @@
+import coindcx
+import pandas as pd
+
+# Set up API credentials
+api_key = "6c7972f2e530f04ea2156e529833b9ba88e30244dd8698ee"
+api_secret = "d548ec71f13591a3e4d38603bdbd09c37e65f45dd660e19a22005d671610429a"
+
+# Define indicator functions
+def calculate_rsi(data, period=14):
+    delta = data['close'].diff()
+    gain, loss = delta.copy(), delta.copy()
+    gain[gain < 0] = 0
+    loss[loss > 0] = 0
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean().abs()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_super_trend(data, length=6, factor=2.2):
+    atr = data['high'] - data['low']
+    upper_band = data['close'] + (factor * atr)
+    lower_band = data['close'] - (factor * atr)
+    super_trend = pd.Series(index=data.index)
+    super_trend[0] = upper_band[0]
+    for i in range(1, len(data)):
+        if data['close'][i] > upper_band[i-1]:
+            super_trend[i] = upper_band[i]
+        elif data['close'][i] < lower_band[i-1]:
+            super_trend[i] = lower_band[i]
+        else:
+            super_trend[i] = super_trend[i-1]
+    return super_trend
+
+def calculate_vwap(data):
+    volume = data['volume']
+    close = data['close']
+    vwap = (volume * close).cumsum() / volume.cumsum()
+    return vwap
+
+# Define strategy logic
+def my_strategy(data):
+    rsi = calculate_rsi(data)
+    super_trend = calculate_super_trend(data)
+    vwap = calculate_vwap(data)
+    
+    buy_signal = (super_trend > 0) & (vwap > data['high']) & (rsi < 50)
+    sell_signal = (super_trend < 0) & (vwap < data['low']) & (rsi > 50)
+    
+    return buy_signal, sell_signal
+
+# Get market data
+data = coindcx.get_market_data("NOT-USDT")
+
+# Run strategy
+buy_signal, sell_signal = my_strategy(data)
+
+# Execute trades
+if buy_signal:
+    coindcx.place_order("NOT-USDT", "buy", 1000)
+elif sell_signal:
+    coindcx.place_order("NOT-USDT", "sell", 1000)
